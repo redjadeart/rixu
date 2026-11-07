@@ -595,46 +595,81 @@ function renderDay() {
   if (isToday && firstEmpty && !isFull && !openSet.size) firstEmpty.focus();
 }
 
-// 拖动 ⋮⋮ 排序：鼠标和手指都能用；拖到屏幕边缘会自动滚动
+// 排序：电脑上拖 ⋮⋮；手机上按住卡片任意位置约 0.3 秒，然后拖
 function enableDrag(list, onEnd) {
-  list.querySelectorAll('.handle').forEach(h => {
-    h.addEventListener('pointerdown', e => {
-      const item = h.closest('[data-id]');
-      if (!item || item.parentElement !== list || e.button > 0) return;
-      e.preventDefault();
-      const before = [...list.children].map(c => c.dataset.id).join();
-      item.classList.add('dragging');
-      document.body.classList.add('is-dragging');
-      let y = e.clientY;
-      const place = () => {
-        for (const o of list.children) {
-          if (o === item || !o.dataset.id) continue;
-          const r = o.getBoundingClientRect();
-          if (y < r.top + r.height / 2) { if (item.nextElementSibling !== o) list.insertBefore(item, o); return; }
-        }
-        if (list.lastElementChild !== item) list.append(item);
-      };
-      const tick = setInterval(() => {
-        const edge = 70;
-        if (y < edge) { scrollBy(0, -10); place(); }
-        else if (y > innerHeight - edge) { scrollBy(0, 10); place(); }
-      }, 16);
-      const move = ev => { y = ev.clientY; place(); };
-      const up = () => {
+  const ids = () => [...list.children].map(c => c.dataset.id).filter(Boolean);
+  const session = (item, startY) => {
+    const before = ids().join();
+    item.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+    let y = startY;
+    const place = () => {
+      for (const o of list.children) {
+        if (o === item || !o.dataset.id) continue;
+        const r = o.getBoundingClientRect();
+        if (y < r.top + r.height / 2) { if (item.nextElementSibling !== o) list.insertBefore(item, o); return; }
+      }
+      if (list.lastElementChild !== item) list.append(item);
+    };
+    const tick = setInterval(() => {
+      const edge = 80;
+      if (y < edge) { scrollBy(0, -12); place(); }
+      else if (y > innerHeight - edge) { scrollBy(0, 12); place(); }
+    }, 16);
+    return {
+      move(ny) { y = ny; place(); },
+      end() {
         clearInterval(tick);
-        removeEventListener('pointermove', move);
-        removeEventListener('pointerup', up);
-        removeEventListener('pointercancel', up);
         item.classList.remove('dragging');
         document.body.classList.remove('is-dragging');
-        const seq = [...list.children].map(c => c.dataset.id).filter(Boolean);
-        if (seq.join() !== before.split(',').filter(Boolean).join()) onEnd(seq);
-      };
-      // 监听整个窗口：拖动时元素会在 DOM 里移动，挂在手柄上会丢事件
+        const seq = ids();
+        if (seq.join() !== before) onEnd(seq);
+      },
+    };
+  };
+
+  // 电脑：鼠标拖手柄
+  list.querySelectorAll('.handle').forEach(h => {
+    h.addEventListener('pointerdown', e => {
+      if (e.pointerType !== 'mouse' || e.button > 0) return;
+      const item = h.closest('[data-id]');
+      if (!item || item.parentElement !== list) return;
+      e.preventDefault();
+      const s = session(item, e.clientY);
+      const move = ev => s.move(ev.clientY);
+      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); s.end(); };
       addEventListener('pointermove', move);
       addEventListener('pointerup', up);
-      addEventListener('pointercancel', up);
     });
+  });
+
+  // 手机：长按卡片
+  [...list.children].filter(c => c.dataset.id).forEach(item => {
+    let timer = null, s = null, sx = 0, sy = 0;
+    item.addEventListener('touchstart', e => {
+      if (e.touches.length > 1 || e.target.closest('.detail, .editor') || e.target === document.activeElement) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      timer = setTimeout(() => {
+        timer = null;
+        document.activeElement?.blur?.();
+        navigator.vibrate?.(10);
+        s = session(item, sy);
+      }, 280);
+    }, { passive: true });
+    item.addEventListener('touchmove', e => {
+      const t = e.touches[0];
+      if (s) { e.preventDefault(); s.move(t.clientY); return; }
+      if (timer && (Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)) { clearTimeout(timer); timer = null; }  // 是在滚动
+    }, { passive: false });
+    const finish = e => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (!s) return;
+      e.preventDefault();               // 拖完不要触发点击 / 聚焦输入框
+      const done = s; s = null; done.end();
+    };
+    item.addEventListener('touchend', finish, { passive: false });
+    item.addEventListener('touchcancel', finish, { passive: false });
+    item.addEventListener('contextmenu', e => e.preventDefault());
   });
 }
 

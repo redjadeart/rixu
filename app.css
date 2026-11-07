@@ -229,3 +229,27 @@ body.is-dragging { user-select: none; -webkit-user-select: none; }
   .edit-row .x, .note-btn { padding: 8px 10px; }
   a, button { -webkit-tap-highlight-color: transparent; }
 }
+
+/* 防止横向撑开 */
+html, body { overflow-x: clip; max-width: 100%; }
+.filter select { min-width: 0; width: 100%; }
+.edit-row input { min-width: 0; }
+.edit-row { min-width: 0; }
+
+/* 字号统一：名字、具体内容、详情、记录用同一套 */
+.name, .xname, .task, .editor, .notes-view, .row, .add-row input, .edit-row input { font-size: 14px; }
+.notes-view { color: var(--text); opacity: .75; }
+.row .n { color: var(--muted); }
+
+@media (pointer: coarse) {
+  body { font-size: 16px; }
+  .name, .xname, .task, .editor, .notes-view, .row, .add-row input, .edit-row input, .linkbar input, .filter select { font-size: 16px; }
+  .count, .hint, .dayblock h4, .tag, .more, .del, .note-btn, .sync { font-size: 13px; }
+  .row .n { width: 92px; }
+  /* 手机上整张卡片长按就能拖，不需要手柄 */
+  .list .handle { display: none; }
+  .list li { padding-left: 12px; gap: 10px; }
+  .list li, .habit-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .list li input, .list li .editor, .habit-item input, .habit-item .editor { -webkit-user-select: text; user-select: text; }
+  .habit-item .handle { display: none; }
+}
