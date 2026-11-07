@@ -196,10 +196,10 @@ function pickMenu(btn, options, onPick) {
   const r = btn.getBoundingClientRect();
   m.style.top = `${r.bottom + scrollY + 4}px`;
   m.style.left = `${Math.max(8, r.right + scrollX - m.offsetWidth)}px`;
-  const close = () => { m.remove(); document.removeEventListener('mousedown', out); document.removeEventListener('keydown', esc_); };
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', out); document.removeEventListener('keydown', esc_); };
   const out = e => { if (!m.contains(e.target) && e.target !== btn) close(); };
   const esc_ = e => { if (e.key === 'Escape') close(); };
-  setTimeout(() => { document.addEventListener('mousedown', out); document.addEventListener('keydown', esc_); });
+  setTimeout(() => { document.addEventListener('pointerdown', out); document.addEventListener('keydown', esc_); });
   m.querySelectorAll('button').forEach(b => b.onclick = () => { close(); onPick(options[+b.dataset.i].text); });
 }
 const lastTask = (id, before) => {
@@ -270,8 +270,17 @@ async function compress(file) {
   const s = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas');
   c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise(r => c.toBlob(r, 'image/webp', 0.82));
+  const ctx = c.getContext('2d');
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  const toBlob = (t, q) => new Promise(r => c.toBlob(r, t, q));
+  let blob = await toBlob('image/webp', 0.82);
+  if (!blob || blob.type !== 'image/webp') {
+    // iPhone 的 Safari 不支持 webp，改用 jpeg（先铺白底，透明处不会变黑）
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    blob = await toBlob('image/jpeg', 0.85);
+  }
+  return blob;
 }
 async function storeImage(file) {
   const id = uid(), blob = await compress(file);
@@ -378,7 +387,7 @@ function mountEditor(wrap, { get, set, onSave, fullUrl }) {
   const file = wrap.querySelector('input[type=file]');
   let saved = null;
 
-  ed.innerHTML = clean(get());
+  ed.innerHTML = hasNotes(get()) ? clean(get()) : '';
   hydrate(ed);
 
   const persist = () => {
@@ -407,7 +416,8 @@ function mountEditor(wrap, { get, set, onSave, fullUrl }) {
 
   ed.addEventListener('input', persist);
   ed.addEventListener('keyup', keepSel);
-  ed.addEventListener('mouseup', keepSel);
+  ed.addEventListener('pointerup', keepSel);
+  ed.addEventListener('blur', keepSel);
   ed.addEventListener('paste', e => {
     e.preventDefault();
     const imgs = [...e.clipboardData.files].filter(f => f.type.startsWith('image/'));
@@ -429,7 +439,7 @@ function mountEditor(wrap, { get, set, onSave, fullUrl }) {
     if (e.target.tagName === 'IMG') lightbox(e.target, () => { e.target.remove(); persist(); });
   });
 
-  wrap.querySelectorAll('.tools button').forEach(b => b.addEventListener('mousedown', e => { e.preventDefault(); keepSel(); }));
+  wrap.querySelectorAll('.tools button').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); keepSel(); }));
   wrap.querySelector('[data-act=link]').onclick = () => {
     linkbar.hidden = !linkbar.hidden;
     if (!linkbar.hidden) { linkInput.value = ''; linkInput.focus(); }
@@ -585,31 +595,46 @@ function renderDay() {
   if (isToday && firstEmpty && !isFull && !openSet.size) firstEmpty.focus();
 }
 
+// 拖动 ⋮⋮ 排序：鼠标和手指都能用；拖到屏幕边缘会自动滚动
 function enableDrag(list, onEnd) {
-  let dragging = null;
-  const items = () => [...list.children].filter(c => c.dataset.id);
   list.querySelectorAll('.handle').forEach(h => {
-    h.addEventListener('pointerdown', () => { h.closest('[data-id]').draggable = true; });
-  });
-  window.onpointerup = () => { if (!dragging) items().forEach(li => li.draggable = false); };
-  list.addEventListener('dragstart', e => {
-    const li = e.target.closest?.('[data-id]');
-    if (!li || !li.draggable || li.parentElement !== list) return;
-    dragging = li; li.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  list.addEventListener('dragover', e => {
-    if (!dragging) return;
-    e.preventDefault();
-    const li = e.target.closest('[data-id]');
-    if (!li || li === dragging || li.parentElement !== list) return;
-    const r = li.getBoundingClientRect();
-    list.insertBefore(dragging, e.clientY > r.top + r.height / 2 ? li.nextSibling : li);
-  });
-  list.addEventListener('dragend', () => {
-    if (!dragging) return;
-    dragging = null;
-    onEnd(items().map(x => x.dataset.id));
+    h.addEventListener('pointerdown', e => {
+      const item = h.closest('[data-id]');
+      if (!item || item.parentElement !== list || e.button > 0) return;
+      e.preventDefault();
+      const before = [...list.children].map(c => c.dataset.id).join();
+      item.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+      let y = e.clientY;
+      const place = () => {
+        for (const o of list.children) {
+          if (o === item || !o.dataset.id) continue;
+          const r = o.getBoundingClientRect();
+          if (y < r.top + r.height / 2) { if (item.nextElementSibling !== o) list.insertBefore(item, o); return; }
+        }
+        if (list.lastElementChild !== item) list.append(item);
+      };
+      const tick = setInterval(() => {
+        const edge = 70;
+        if (y < edge) { scrollBy(0, -10); place(); }
+        else if (y > innerHeight - edge) { scrollBy(0, 10); place(); }
+      }, 16);
+      const move = ev => { y = ev.clientY; place(); };
+      const up = () => {
+        clearInterval(tick);
+        removeEventListener('pointermove', move);
+        removeEventListener('pointerup', up);
+        removeEventListener('pointercancel', up);
+        item.classList.remove('dragging');
+        document.body.classList.remove('is-dragging');
+        const seq = [...list.children].map(c => c.dataset.id).filter(Boolean);
+        if (seq.join() !== before.split(',').filter(Boolean).join()) onEnd(seq);
+      };
+      // 监听整个窗口：拖动时元素会在 DOM 里移动，挂在手柄上会丢事件
+      addEventListener('pointermove', move);
+      addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
+    });
   });
 }
 
@@ -809,4 +834,5 @@ window.addEventListener('offline', () => setSync('离线', 'off'));
 setInterval(refresh, 60000);
 window.addEventListener('beforeunload', e => { if (dirty.size) { flush(); e.preventDefault(); } });
 
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 sb.auth.getSession().then(({ data }) => data.session ? start(data.session.user) : showLogin());

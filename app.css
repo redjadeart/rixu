@@ -204,3 +204,28 @@ body.login-mode .top { display: none; }
 .welcome { margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--accent-soft); }
 .welcome p { margin: 6px 0 12px; font-size: 13px; color: var(--muted); }
 .who { align-self: center; font-size: 13px; color: var(--muted); margin-right: auto; }
+
+/* 手机 */
+body.full { padding: 0 16px calc(40px + env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.top { position: sticky; top: 0; z-index: 5; background: var(--bg); margin: 0 -16px; padding: calc(10px + env(safe-area-inset-top)) 16px 8px; }
+.handle { touch-action: none; }
+.list li.dragging, .habit-item.dragging {
+  opacity: 1; position: relative; z-index: 3; box-shadow: 0 8px 24px rgba(0,0,0,.14); transform: scale(1.015);
+}
+.habit-item.dragging { background: var(--bg); border-radius: 10px; }
+body.is-dragging { user-select: none; -webkit-user-select: none; }
+@media (pointer: coarse) {
+  .task, .xname, .add-row input, .linkbar input, .edit-row input, .filter select, .editor { font-size: 16px; }
+  .handle { padding: 8px 6px 8px 4px; opacity: .6; font-size: 13px; }
+  .check { width: 30px; height: 30px; font-size: 12px; }
+  .list li { gap: 6px; padding: 12px 10px 12px 2px; }
+  .more, .del { padding: 6px 8px; }
+  .reuse { width: 34px; height: 34px; font-size: 16px; }
+  .tools button { padding: 7px 14px; font-size: 13px; }
+  .tools .tip { display: none; }
+  .datebar .nav { width: 44px; height: 44px; }
+  .tabs button { padding: 7px 16px; }
+  .menu button { padding: 11px 10px; }
+  .edit-row .x, .note-btn { padding: 8px 10px; }
+  a, button { -webkit-tap-highlight-color: transparent; }
+}
