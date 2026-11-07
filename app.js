@@ -595,35 +595,108 @@ function renderDay() {
   if (isToday && firstEmpty && !isFull && !openSet.size) firstEmpty.focus();
 }
 
+// 轻微震动：安卓用 vibrate；iPhone（iOS 18+）用开关控件触发系统触感，不支持时什么都不做
+const haptic = (() => {
+  let lbl = null;
+  return () => {
+    try {
+      if (navigator.vibrate) { navigator.vibrate(8); return; }
+      if (!lbl) {
+        lbl = document.createElement('label');
+        lbl.style.cssText = 'position:fixed;left:-99px;top:0;opacity:0;pointer-events:none';
+        const i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', '');
+        lbl.append(i); document.body.append(lbl);
+      }
+      lbl.click();
+    } catch {}
+  };
+})();
+
 // 排序：电脑上拖 ⋮⋮；手机上按住卡片任意位置约 0.3 秒，然后拖
 function enableDrag(list, onEnd) {
   const ids = () => [...list.children].map(c => c.dataset.id).filter(Boolean);
+  // 拖动时不移动 DOM：卡片 1:1 跟手，其他卡片用弹簧动画让位，松手后弹回落位
   const session = (item, startY) => {
-    const before = ids().join();
-    item.classList.add('dragging');
+    const els = [...list.children].filter(c => c.dataset.id);
+    const from = els.indexOf(item);
+    const rects = els.map(e => e.getBoundingClientRect());
+    const space = els.length > 1 ? rects[1].top - rects[0].bottom : 0;
+    const h = rects[from].height + space;
+    const center0 = rects[from].top + rects[from].height / 2;
+    const scroll0 = scrollY;
+    let y = startY, to = from, ended = false, done = null;
+
+    // 每张卡片一个弹簧：位置 y、缩放 s
+    const st = new Map(els.map(e => [e, { y: 0, vy: 0, ty: 0, s: 1, vs: 0, ts: 1 }]));
+    const me = st.get(item);
+    me.ts = 1.045;
+    if (item.classList.contains('pressing') || getComputedStyle(item).scale !== 'none') me.s = parseFloat(getComputedStyle(item).scale) || 1;
     document.body.classList.add('is-dragging');
-    let y = startY;
-    const place = () => {
-      for (const o of list.children) {
-        if (o === item || !o.dataset.id) continue;
-        const r = o.getBoundingClientRect();
-        if (y < r.top + r.height / 2) { if (item.nextElementSibling !== o) list.insertBefore(item, o); return; }
-      }
-      if (list.lastElementChild !== item) list.append(item);
+    item.classList.add('dragging');
+    els.forEach(e => { e.style.transition = 'none'; });
+    haptic();
+
+    const step = (o, k, z, dt) => {
+      const c = 2 * z * Math.sqrt(k);
+      o.vy += (-k * (o.y - o.ty) - c * o.vy) * dt; o.y += o.vy * dt;
     };
-    const tick = setInterval(() => {
-      const edge = 80;
-      if (y < edge) { scrollBy(0, -12); place(); }
-      else if (y > innerHeight - edge) { scrollBy(0, 12); place(); }
-    }, 16);
+    let last = performance.now();
+    const frame = now => {
+      const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
+      // 边缘自动滚动
+      if (!ended) {
+        const edge = 90;
+        const v = y < edge ? -(edge - y) / 5 : y > innerHeight - edge ? (y - innerHeight + edge) / 5 : 0;
+        if (v) { scrollBy(0, v); retarget(); }
+      }
+      let busy = false;
+      for (const [e, o] of st) {
+        if (e === item && !ended) { o.y = o.ty; o.vy = 0; }        // 拖着的卡片紧贴手指
+        else step(o, ended && e === item ? 420 : 520, ended && e === item ? .78 : .72, dt);
+        const cs = 2 * .55 * Math.sqrt(700);                         // 起飞/落下时的缩放带一点回弹
+        o.vs += (-700 * (o.s - o.ts) - cs * o.vs) * dt; o.s += o.vs * dt;
+        e.style.translate = Math.abs(o.y) < .05 ? '' : `0 ${o.y.toFixed(2)}px`;
+        e.style.scale = Math.abs(o.s - 1) < .0005 ? '' : o.s.toFixed(4);
+        if (Math.abs(o.y - o.ty) > .3 || Math.abs(o.vy) > 3 || Math.abs(o.s - o.ts) > .001 || Math.abs(o.vs) > .01) busy = true;
+      }
+      if (ended && !busy) return done();
+      requestAnimationFrame(frame);
+    };
+    const retarget = () => {
+      const dy = y - startY + (scrollY - scroll0);
+      me.ty = dy;
+      const c = center0 + dy;
+      let t = from;
+      for (let i = from + 1; i < els.length; i++) if (c > rects[i].top + rects[i].height / 2) t = i;
+      for (let i = from - 1; i >= 0; i--) if (c < rects[i].top + rects[i].height / 2) t = i;
+      if (t !== to) { to = t; haptic(); }
+      els.forEach((e, i) => {
+        if (e === item) return;
+        st.get(e).ty = from < to && i > from && i <= to ? -h : to < from && i >= to && i < from ? h : 0;
+      });
+    };
+    requestAnimationFrame(frame);
+
     return {
-      move(ny) { y = ny; place(); },
+      move(ny) { y = ny; retarget(); },
       end() {
-        clearInterval(tick);
-        item.classList.remove('dragging');
-        document.body.classList.remove('is-dragging');
-        const seq = ids();
-        if (seq.join() !== before) onEnd(seq);
+        ended = true;
+        let land = 0;
+        if (to > from) for (let i = from + 1; i <= to; i++) land += rects[i].height + space;
+        if (to < from) for (let i = to; i < from; i++) land -= rects[i].height + space;
+        me.ty = land; me.ts = 1;
+        haptic();
+        done = () => {
+          els.forEach(e => { e.style.translate = ''; e.style.scale = ''; });
+          item.classList.remove('dragging');
+          document.body.classList.remove('is-dragging');
+          if (to !== from) {
+            const seq = els.map(e => e.dataset.id);
+            seq.splice(to, 0, seq.splice(from, 1)[0]);
+            onEnd(seq);
+          }
+          requestAnimationFrame(() => els.forEach(e => { e.style.transition = ''; }));
+        };
       },
     };
   };
@@ -649,19 +722,21 @@ function enableDrag(list, onEnd) {
     item.addEventListener('touchstart', e => {
       if (e.touches.length > 1 || e.target.closest('.detail, .editor') || e.target === document.activeElement) return;
       sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      item.classList.add('pressing');
       timer = setTimeout(() => {
         timer = null;
         document.activeElement?.blur?.();
-        navigator.vibrate?.(10);
         s = session(item, sy);
-      }, 280);
+        item.classList.remove('pressing');
+      }, 200);
     }, { passive: true });
     item.addEventListener('touchmove', e => {
       const t = e.touches[0];
       if (s) { e.preventDefault(); s.move(t.clientY); return; }
-      if (timer && (Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)) { clearTimeout(timer); timer = null; }  // 是在滚动
+      if (timer && (Math.abs(t.clientX - sx) > 8 || Math.abs(t.clientY - sy) > 8)) { clearTimeout(timer); timer = null; item.classList.remove('pressing'); }  // 是在滚动
     }, { passive: false });
     const finish = e => {
+      item.classList.remove('pressing');
       if (timer) { clearTimeout(timer); timer = null; }
       if (!s) return;
       e.preventDefault();               // 拖完不要触发点击 / 聚焦输入框

@@ -209,9 +209,11 @@ body.login-mode .top { display: none; }
 body.full { padding: 0 16px calc(40px + env(safe-area-inset-bottom)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
 .top { position: sticky; top: 0; z-index: 5; background: var(--bg); margin: 0 -16px; padding: calc(10px + env(safe-area-inset-top)) 16px 8px; }
 .handle { touch-action: none; }
+.list li, .habit-item { position: relative; }
 .list li.dragging, .habit-item.dragging {
-  opacity: 1; position: relative; z-index: 3; box-shadow: 0 8px 24px rgba(0,0,0,.14); transform: scale(1.015);
+  opacity: 1; z-index: 3; box-shadow: 0 14px 34px rgba(0,0,0,.18);
 }
+.list li.pressing, .habit-item.pressing { scale: .98; transition: scale .28s ease-out; }
 .habit-item.dragging { background: var(--bg); border-radius: 10px; }
 body.is-dragging { user-select: none; -webkit-user-select: none; }
 @media (pointer: coarse) {
