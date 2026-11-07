@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>日序</title>
+  <link rel="icon" href="icon-128.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body class="full">
+  <header class="top">
+    <nav class="tabs">
+      <button data-view="day" class="on">今日</button>
+      <button data-view="history">记录</button>
+      <button data-view="edit">习惯</button>
+    </nav>
+    <span id="sync" class="sync"></span>
+  </header>
+  <main id="app"></main>
+  <script src="supabase.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
