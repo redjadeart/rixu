@@ -1,5 +1,5 @@
 // 离线也能打开：先走网络（保证拿到最新版本），断网时用缓存
-const CACHE = 'rixu-shell-v4';
+const CACHE = 'rixu-shell-v5';
 const FILES = ['./', 'index.html', 'app.js', 'app.css', 'supabase.js', 'manifest.webmanifest', 'icon-128.png', 'icon-180.png', 'icon-192.png'];
 
 self.addEventListener('install', e => {

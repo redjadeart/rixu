@@ -255,3 +255,24 @@ html, body { overflow-x: clip; max-width: 100%; }
   .list li input, .list li .editor, .habit-item input, .habit-item .editor { -webkit-user-select: text; user-select: text; }
   .habit-item .handle { display: none; }
 }
+
+/* 略过 */
+.skip { display: none; font-size: 12px; color: var(--muted); padding: 1px 8px; border-radius: 6px; }
+.skip:hover { background: var(--line); color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .list li:hover .skip { display: inline-block; } }
+.swipe-hint {
+  position: absolute; left: 100%; top: 0; bottom: 0; display: flex; align-items: center;
+  padding-left: 18px; white-space: nowrap; color: var(--muted); font-size: 14px; transition: color .15s;
+}
+.swipe-hint.ready { color: var(--accent); font-weight: 600; }
+.skipped { margin-top: 10px; }
+.skipped summary { cursor: pointer; font-size: 13px; color: var(--muted); padding: 6px 2px; list-style: none; }
+.skipped summary::-webkit-details-marker { display: none; }
+.skipped summary::before { content: "▸ "; }
+.skipped[open] summary::before { content: "▾ "; }
+.skip-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-top: 4px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); }
+.skip-row .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skip-row em { font-style: normal; margin-left: 8px; opacity: .8; }
+.skip-row .unskip { color: var(--accent); font-size: 13px; padding: 4px 8px; border-radius: 6px; flex: none; }
+.skip-row .unskip:hover { background: var(--accent-soft); }
+@media (pointer: coarse) { .skipped summary { font-size: 14px; padding: 10px 2px; } }

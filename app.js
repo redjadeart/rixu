@@ -34,6 +34,7 @@ let state = { habits: [], days: {} };
 let cur = params.get('date') || today();
 let view = params.get('view') || 'day';
 let filter = 'all';
+let skipOpen = false;
 const openSet = new Set(params.get('open') ? [params.get('open')] : []);
 
 /* ---------- 数据 ---------- */
@@ -118,7 +119,8 @@ function save() {
       || Object.values(d.done || {}).some(Boolean)
       || Object.values(d.notes || {}).some(hasNotes)
       || (d.extras || []).length > 0
-      || !!d.order || !!d.rolled;
+      || !!d.order || !!d.rolled
+      || Object.values(d.skipped || {}).some(Boolean);
     if (!has) delete state.days[k];
   }
   const local = toKV(state);
@@ -132,7 +134,7 @@ function save() {
 }
 function updateTitle() {
   const d = state.days[today()];
-  const left = d ? dayItems(d).filter(h => !d.done[h.id]).length : active().length;
+  const left = d ? dayItems(d).filter(h => !d.done[h.id] && !d.skipped?.[h.id]).length : active().length;
   document.title = left ? `(${left}) 日序` : '日序';
 }
 const day = k => {
@@ -485,7 +487,8 @@ const detailHTML = (ph = '今天的详细内容…可以直接粘贴链接、截
   </div>`;
 
 function renderDay() {
-  const d = day(cur), hs = dayItems(d);
+  const d = day(cur), all = dayItems(d), sk = d.skipped || {};
+  const hs = all.filter(h => !sk[h.id]), skippedItems = all.filter(h => sk[h.id]);
   const n = hs.filter(h => d.done[h.id]).length;
   const isToday = cur === today();
   app.innerHTML = `
@@ -513,6 +516,7 @@ function renderDay() {
               ${since ? `<span class="tag carry" title="${label(since)} 开始，还没完成">延续 · ${rel(since)}</span>`
                 : x ? '<span class="tag">临时</span>' : ''}
               <button class="more ${hasNotes(d.notes[h.id]) ? 'has' : ''} ${!x && hasNotes(habitNotes(h.id)) ? 'ref' : ''} ${open ? 'open' : ''}" title="详细内容">详情</button>
+              <button class="skip" title="${x ? '推到明天' : '今天先不做，明天照常出现'}">略过</button>
               ${x ? '<button class="del" title="删除这个临时任务">✕</button>' : ''}
             </div>
           </div>
@@ -523,6 +527,12 @@ function renderDay() {
         </div>
       </li>`;
     }).join('')}</ol>
+    ${skippedItems.length ? `<details class="skipped" ${skipOpen ? 'open' : ''}>
+      <summary>${cur === today() ? '今天略过' : '这天略过'}（${skippedItems.length}）</summary>
+      ${skippedItems.map(h => `<div class="skip-row" data-id="${h.id}">
+        <span class="sn">${esc(h.name)}${!h.extra && (d.tasks[h.id] || '').trim() ? `<em>${esc(d.tasks[h.id])}</em>` : ''}</span>
+        <button class="unskip">恢复</button></div>`).join('')}
+    </details>` : ''}
     <div class="add-row"><span>＋</span><input id="newTask" placeholder="添加临时任务，回车">
       ${recentExtras().length ? '<button class="reuse" id="reuseExtra" title="复用以前的临时任务">↺</button>' : ''}</div>
     ${!state.habits.length && Object.keys(state.days).length <= 1 ? `<div class="welcome">
@@ -591,6 +601,64 @@ function renderDay() {
   if (rx) rx.onclick = () => pickMenu(rx, recentExtras(), addExtra);
   // 今日里拖动：只改这一天的顺序
   enableDrag(list, seq => { day(cur).order = seq; save(); render(); });
+  // 略过：电脑上点按钮，手机上左滑
+  const skipItem = id => {
+    const dd = day(cur);
+    (dd.skipped ??= {})[id] = true;
+    delete dd.done[id];
+    openSet.delete(id);
+    save(); render();
+  };
+  list.querySelectorAll('li').forEach(li => {
+    const id = li.dataset.id;
+    li.querySelector('.skip').onclick = () => skipItem(id);
+    let sx = 0, sy = 0, dx = 0, mode = null, hint = null;
+    li.addEventListener('touchstart', e => {
+      mode = e.touches.length > 1 || e.target.closest('.detail') ? 'no' : null;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; dx = 0;
+    }, { passive: true });
+    li.addEventListener('touchmove', e => {
+      if (mode === 'no' || document.body.classList.contains('is-dragging')) return;
+      const t = e.touches[0], mx = t.clientX - sx, my = t.clientY - sy;
+      if (!mode) {
+        if (mx < -10 && Math.abs(mx) > Math.abs(my) * 1.3) {
+          mode = 'swipe';
+          li.style.transition = 'none';
+          hint = document.createElement('div');
+          hint.className = 'swipe-hint'; hint.textContent = li.classList.contains('extra') ? '推到明天' : '今天略过';
+          li.append(hint);
+        } else if (Math.abs(my) > 10 || mx > 10) { mode = 'no'; return; }
+        else return;
+      }
+      e.preventDefault();
+      dx = Math.min(0, mx);
+      li.style.translate = `${dx}px 0`;
+      hint.classList.toggle('ready', dx < -90);
+    }, { passive: false });
+    const end = e => {
+      if (mode !== 'swipe') { mode = null; return; }
+      mode = null;
+      if (e.cancelable) e.preventDefault();
+      if (dx < -90) {
+        li.style.transition = 'translate .2s ease-in, opacity .2s';
+        li.style.translate = '-110% 0'; li.style.opacity = '0';
+        setTimeout(() => skipItem(id), 200);
+      } else {
+        li.style.transition = 'translate .3s cubic-bezier(.2,.9,.3,1.2)';
+        li.style.translate = '';
+        setTimeout(() => { hint?.remove(); li.style.transition = ''; }, 300);
+      }
+    };
+    li.addEventListener('touchend', end, { passive: false });
+    li.addEventListener('touchcancel', end, { passive: false });
+  });
+  const skBox = app.querySelector('.skipped');
+  if (skBox) {
+    skBox.ontoggle = () => { skipOpen = skBox.open; };
+    skBox.querySelectorAll('.skip-row').forEach(r => r.querySelector('.unskip').onclick = () => {
+      delete day(cur).skipped[r.dataset.id]; save(); render();
+    });
+  }
   const firstEmpty = inputs.find(x => !x.value && !x.closest('li').classList.contains('done'));
   if (isToday && firstEmpty && !isFull && !openSet.size) firstEmpty.focus();
 }
@@ -756,9 +824,9 @@ function renderHistory() {
     const items = [...hs, ...(d.extras || []).map(e => ({ ...e, extra: true }))];
     const rows = items
       .filter(h => (filter === 'all' || h.id === filter || (filter === '__extra' && h.extra))
-        && (h.extra || (d.tasks[h.id] || '').trim() || d.done[h.id] || hasNotes(d.notes?.[h.id])))
+        && (h.extra || (d.tasks[h.id] || '').trim() || d.done[h.id] || d.skipped?.[h.id] || hasNotes(d.notes?.[h.id])))
       .map(h => `<div class="row">
-        <span class="m ${d.done[h.id] ? '' : 'no'}">${d.done[h.id] ? '✓' : '○'}</span>
+        <span class="m ${d.done[h.id] ? '' : 'no'}" ${d.skipped?.[h.id] ? 'title="略过"' : ''}>${d.done[h.id] ? '✓' : d.skipped?.[h.id] ? '↷' : '○'}</span>
         <span class="n">${h.extra ? '<i class="tag">临时</i>' : esc(h.name)}</span>
         <div class="t">${esc(h.extra ? h.name : d.tasks[h.id] || '')}
           ${hasNotes(d.notes?.[h.id]) ? `<div class="notes-view">${clean(d.notes[h.id])}</div>` : ''}
